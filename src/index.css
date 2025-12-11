@@ -85,7 +85,8 @@ body {
 }
 
 .container[data-version="v2"],
-.container[data-version="v3"] {
+.container[data-version="v3"],
+.container[data-version="v5"] {
   grid-template-columns: minmax(0, 1fr);
   row-gap: 0;
 }
@@ -131,11 +132,13 @@ body {
   grid-column: 3;
 }
 
-/* For v2 and v3, remove grid-column constraint and add padding */
+/* For v2, v3, and v5, remove grid-column constraint and add padding */
 .container[data-version="v2"] .entry-text,
 .container[data-version="v2"] .entry-input,
 .container[data-version="v3"] .entry-text,
-.container[data-version="v3"] .entry-input {
+.container[data-version="v3"] .entry-input,
+.container[data-version="v5"] .entry-text,
+.container[data-version="v5"] .entry-input {
   grid-column: 1;
   padding-left: 20px;
   padding-right: 20px;
