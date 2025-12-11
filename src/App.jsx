@@ -91,8 +91,27 @@ function Entry({ entry, onCommit, onInputChange, timeFormatIndex, cycleTimeForma
         if (textareaRef.current && document.activeElement !== textareaRef.current) {
           textareaRef.current.focus()
         }
-      }, 100)
-      return () => clearInterval(interval)
+      }, 50)
+      
+      // Also refocus on blur
+      const handleBlur = () => {
+        if (textareaRef.current) {
+          // Use setTimeout to ensure focus happens after any other event handlers
+          setTimeout(() => {
+            if (textareaRef.current && entry.isActive) {
+              textareaRef.current.focus()
+            }
+          }, 0)
+        }
+      }
+      
+      const textarea = textareaRef.current
+      textarea.addEventListener('blur', handleBlur)
+      
+      return () => {
+        clearInterval(interval)
+        textarea.removeEventListener('blur', handleBlur)
+      }
     }
   }, [entry.isActive])
 
