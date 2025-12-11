@@ -48,6 +48,24 @@ function useVersion() {
   return [version, setVersion]
 }
 
+function useFontSize() {
+  const [fontSize, setFontSize] = useState(() => {
+    const saved = localStorage.getItem('fontSize')
+    return saved ? parseFloat(saved) : 14
+  })
+
+  useEffect(() => {
+    localStorage.setItem('fontSize', fontSize.toString())
+  }, [fontSize])
+
+  // Calculate line spacing multiplier proportionally
+  // 4 is to 14px what x is to fontSize
+  // So: spacingMultiplier = fontSize * (4/14)
+  const spacingMultiplier = fontSize * (4 / 14)
+
+  return [fontSize, setFontSize, spacingMultiplier]
+}
+
 function VersionSwitcher({ version, setVersion }) {
   const versions = ['v1', 'v2', 'v3']
   
@@ -66,6 +84,79 @@ function VersionSwitcher({ version, setVersion }) {
   )
 }
 
+function FontSizeSlider({ fontSize, setFontSize }) {
+  const sliderRef = useRef(null)
+  const isDraggingRef = useRef(false)
+  const minSize = 14
+  const maxSize = 24
+
+  const handleMouseDown = (e) => {
+    isDraggingRef.current = true
+    handleMove(e)
+    document.addEventListener('mousemove', handleMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
+
+  const handleTouchStart = (e) => {
+    isDraggingRef.current = true
+    handleMove(e.touches[0])
+    document.addEventListener('touchmove', handleTouchMove)
+    document.addEventListener('touchend', handleTouchEnd)
+  }
+
+  const handleMove = (e) => {
+    if (!isDraggingRef.current || !sliderRef.current) return
+    
+    const rect = sliderRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const percentage = Math.max(0, Math.min(1, x / rect.width))
+    const newSize = minSize + (maxSize - minSize) * percentage
+    setFontSize(newSize)
+  }
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length > 0) {
+      handleMove(e.touches[0])
+    }
+  }
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false
+    document.removeEventListener('mousemove', handleMove)
+    document.removeEventListener('mouseup', handleMouseUp)
+  }
+
+  const handleTouchEnd = () => {
+    isDraggingRef.current = false
+    document.removeEventListener('touchmove', handleTouchMove)
+    document.removeEventListener('touchend', handleTouchEnd)
+  }
+
+  const percentage = ((fontSize - minSize) / (maxSize - minSize)) * 100
+
+  return (
+    <div className="font-size-slider-container">
+      <div
+        ref={sliderRef}
+        className="font-size-slider"
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+      >
+        <div className="slider-track">
+          <div
+            className="slider-fill"
+            style={{ width: `${percentage}%` }}
+          />
+          <div
+            className="slider-thumb"
+            style={{ left: `${percentage}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function useTheme() {
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
@@ -80,7 +171,7 @@ function useTheme() {
   }, [])
 }
 
-function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade, placeholder, version, lastCommitTimeRef, onFontWidthChange }) {
+function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade, placeholder, version, lastCommitTimeRef, onFontWidthChange, fontSize, spacingMultiplier }) {
   const textareaRef = useRef(null)
   const contentEditableRef = useRef(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -113,7 +204,12 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
   }, [entry.isActive, entry.frozen, entry.frozenAt, timeFormatIndex])
 
   const timestampElement = (fadeClass = '') => (
-    <div className={`timestamp clickable ${fadeClass}`} onClick={cycleTimeFormat} title="Click to change time format">
+    <div 
+      className={`timestamp clickable ${fadeClass}`} 
+      onClick={cycleTimeFormat} 
+      title="Click to change time format"
+      style={{ fontSize: `${fontSize}px`, lineHeight: `${fontSize + spacingMultiplier}px` }}
+    >
       {timestamp}
     </div>
   )
@@ -509,7 +605,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     return (
       <div className="entry">
         {version === 'v1' && timestampElement(fadeClass)}
-        <div className={`entry-text ${fadeClass}`} style={combinedStyle}>
+        <div className={`entry-text ${fadeClass}`} style={{ ...combinedStyle, fontSize: `${fontSize}px`, lineHeight: `${fontSize + spacingMultiplier}px` }}>
           {version === 'v3' ? renderTextWithWidths() : entry.text}
         </div>
       </div>
@@ -523,7 +619,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
         <div
           ref={contentEditableRef}
           className="entry-input entry-input-contenteditable"
-          style={combinedStyle}
+          style={{ ...combinedStyle, fontSize: `${fontSize}px`, lineHeight: `${fontSize + spacingMultiplier}px` }}
           contentEditable="true"
           suppressContentEditableWarning={true}
           onInput={handleInput}
@@ -543,7 +639,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
       <textarea
         ref={textareaRef}
         className="entry-input"
-        style={combinedStyle}
+        style={{ ...combinedStyle, fontSize: `${fontSize}px`, lineHeight: `${fontSize + spacingMultiplier}px` }}
         value={entry.text}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
@@ -561,6 +657,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
 function App() {
   useTheme()
   const [version, setVersion] = useVersion()
+  const [fontSize, setFontSize, spacingMultiplier] = useFontSize()
   const [timeFormatIndex, cycleTimeFormat] = useFormatPreference('timeFormat', 0)
   const [entries, setEntries] = useState([
     { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null, fontWidth: null, characterWidths: [] }
@@ -713,8 +810,11 @@ function App() {
 
   return (
     <>
-      <VersionSwitcher version={version} setVersion={setVersion} />
-      <div className="container" data-version={version} ref={containerRef} onClick={handleContainerClick} onTouchStart={handleContainerClick}>
+      <div className="top-controls">
+        <VersionSwitcher version={version} setVersion={setVersion} />
+        <FontSizeSlider fontSize={fontSize} setFontSize={setFontSize} />
+      </div>
+      <div className="container" data-version={version} ref={containerRef} onClick={handleContainerClick} onTouchStart={handleContainerClick} style={{ '--font-size': `${fontSize}px` }}>
         {entries.map((entry) => {
           return (
             <Entry
@@ -731,6 +831,8 @@ function App() {
               version={version}
               lastCommitTimeRef={lastCommitTimeRef}
               onFontWidthChange={version === 'v3' ? handleFontWidthChange : undefined}
+              fontSize={fontSize}
+              spacingMultiplier={spacingMultiplier}
             />
           )
         })}
