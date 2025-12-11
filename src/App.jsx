@@ -1,18 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 
-const dateFormats = [
-  (date) => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
-  },
-  (date) => {
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const year = date.getFullYear()
-    return `${month}/${day}/${year}`
-  }
-]
-
 const timeFormats = [
   (date) => {
     const h = String(date.getHours()).padStart(2, '0')
@@ -41,26 +28,11 @@ function useFormatPreference(key, defaultIndex) {
   }, [formatIndex])
 
   const cycleFormat = () => {
-    const maxIndex = key === 'dateFormat' ? dateFormats.length - 1 : timeFormats.length - 1
+    const maxIndex = timeFormats.length - 1
     setFormatIndex(prev => (prev + 1) % (maxIndex + 1))
   }
 
   return [formatIndex, cycleFormat]
-}
-
-function isSameDay(date1, date2) {
-  if (!date1 || !date2) return false
-  return date1.getFullYear() === date2.getFullYear() &&
-         date1.getMonth() === date2.getMonth() &&
-         date1.getDate() === date2.getDate()
-}
-
-function getEntryDate(entry) {
-  if (entry.frozenAt) {
-    return entry.frozenAt
-  }
-  // For active entries, use current date
-  return new Date()
 }
 
 function useTheme() {
@@ -77,44 +49,32 @@ function useTheme() {
   }, [])
 }
 
-function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIndex, timeFormatIndex, cycleDateFormat, cycleTimeFormat }) {
+function Entry({ entry, onCommit, onInputChange, timeFormatIndex, cycleTimeFormat }) {
   const textareaRef = useRef(null)
   
   const [timestamp, setTimestamp] = useState(() => {
     return timeFormats[timeFormatIndex](new Date())
   })
-  const [date, setDate] = useState(() => {
-    return dateFormats[dateFormatIndex](new Date())
-  })
 
   useEffect(() => {
-    const updateFormats = (dateObj) => {
+    const updateTimestamp = (dateObj) => {
       setTimestamp(timeFormats[timeFormatIndex](dateObj))
-      setDate(dateFormats[dateFormatIndex](dateObj))
     }
 
     if (entry.frozenAt) {
-      updateFormats(entry.frozenAt)
+      updateTimestamp(entry.frozenAt)
       return
     }
 
     if (entry.isActive && !entry.frozen) {
-      updateFormats(new Date())
+      updateTimestamp(new Date())
       const interval = setInterval(() => {
-        updateFormats(new Date())
+        updateTimestamp(new Date())
       }, 250)
       return () => clearInterval(interval)
     }
-  }, [entry.isActive, entry.frozen, entry.frozenAt, dateFormatIndex, timeFormatIndex])
+  }, [entry.isActive, entry.frozen, entry.frozenAt, timeFormatIndex])
 
-  const entryDate = getEntryDate(entry)
-  const shouldShowDate = !previousEntryDate || !isSameDay(entryDate, previousEntryDate)
-
-  const dateElement = (
-    <div className="date clickable" onClick={cycleDateFormat} title="Click to change date format">
-      {shouldShowDate ? date : '\u00A0'}
-    </div>
-  )
   const timestampElement = (
     <div className="timestamp clickable" onClick={cycleTimeFormat} title="Click to change time format">
       {timestamp}
@@ -161,7 +121,6 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
   if (entry.committed) {
     return (
       <div className="entry">
-        {dateElement}
         {timestampElement}
         <div className="entry-text">{entry.text}</div>
       </div>
@@ -170,7 +129,6 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
   return (
     <div className="entry">
-      {dateElement}
       {timestampElement}
       <textarea
         ref={textareaRef}
@@ -188,7 +146,6 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
 function App() {
   useTheme()
-  const [dateFormatIndex, cycleDateFormat] = useFormatPreference('dateFormat', 0)
   const [timeFormatIndex, cycleTimeFormat] = useFormatPreference('timeFormat', 0)
   const [entries, setEntries] = useState([
     { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null }
@@ -224,19 +181,14 @@ function App() {
 
   return (
     <div className="container">
-      {entries.map((entry, index) => {
-        const previousEntry = index > 0 ? entries[index - 1] : null
-        const previousEntryDate = previousEntry ? getEntryDate(previousEntry) : null
+      {entries.map((entry) => {
         return (
           <Entry
             key={entry.id}
             entry={entry}
             onCommit={handleCommit}
             onInputChange={handleInputChange}
-            previousEntryDate={previousEntryDate}
-            dateFormatIndex={dateFormatIndex}
             timeFormatIndex={timeFormatIndex}
-            cycleDateFormat={cycleDateFormat}
             cycleTimeFormat={cycleTimeFormat}
           />
         )
