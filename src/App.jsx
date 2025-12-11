@@ -49,7 +49,7 @@ function useTheme() {
   }, [])
 }
 
-function Entry({ entry, onCommit, onInputChange, timeFormatIndex, cycleTimeFormat }) {
+function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade }) {
   const textareaRef = useRef(null)
   
   const [timestamp, setTimestamp] = useState(() => {
@@ -75,14 +75,19 @@ function Entry({ entry, onCommit, onInputChange, timeFormatIndex, cycleTimeForma
     }
   }, [entry.isActive, entry.frozen, entry.frozenAt, timeFormatIndex])
 
-  const timestampElement = (
-    <div className="timestamp clickable" onClick={cycleTimeFormat} title="Click to change time format">
+  const timestampElement = (fadeClass = '') => (
+    <div className={`timestamp clickable ${fadeClass}`} onClick={cycleTimeFormat} title="Click to change time format">
       {timestamp}
     </div>
   )
 
   useEffect(() => {
     if (entry.isActive && textareaRef.current) {
+      // Update the active input ref for App component
+      if (activeInputRef) {
+        activeInputRef.current = textareaRef.current
+      }
+      
       // Immediate focus when entry becomes active
       textareaRef.current.focus()
       
@@ -111,12 +116,20 @@ function Entry({ entry, onCommit, onInputChange, timeFormatIndex, cycleTimeForma
       return () => {
         clearInterval(interval)
         textarea.removeEventListener('blur', handleBlur)
+        if (activeInputRef && activeInputRef.current === textareaRef.current) {
+          activeInputRef.current = null
+        }
       }
     }
-  }, [entry.isActive])
+  }, [entry.isActive, activeInputRef])
 
   const handleInput = (e) => {
     onInputChange(entry.id, e.target.value)
+    
+    // Track typing activity (not Enter key)
+    if (onTyping) {
+      onTyping()
+    }
     
     // Auto-resize
     const textarea = e.target
@@ -137,18 +150,20 @@ function Entry({ entry, onCommit, onInputChange, timeFormatIndex, cycleTimeForma
     }
   }
 
+  const fadeClass = shouldFade ? 'faded' : ''
+
   if (entry.committed) {
     return (
       <div className="entry">
-        {timestampElement}
-        <div className="entry-text">{entry.text}</div>
+        {timestampElement(fadeClass)}
+        <div className={`entry-text ${fadeClass}`}>{entry.text}</div>
       </div>
     )
   }
 
   return (
     <div className="entry">
-      {timestampElement}
+      {timestampElement()}
       <textarea
         ref={textareaRef}
         className="entry-input"
@@ -169,6 +184,44 @@ function App() {
   const [entries, setEntries] = useState([
     { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null }
   ])
+  const containerRef = useRef(null)
+  const activeInputRef = useRef(null)
+
+  // Focus active input on first touch/click anywhere on the page (for mobile keyboard)
+  useEffect(() => {
+    const handleFirstInteraction = (e) => {
+      if (activeInputRef.current) {
+        activeInputRef.current.focus()
+        // Remove listeners after first interaction
+        document.removeEventListener('touchstart', handleFirstInteraction, true)
+        document.removeEventListener('click', handleFirstInteraction, true)
+      }
+    }
+
+    document.addEventListener('touchstart', handleFirstInteraction, true)
+    document.addEventListener('click', handleFirstInteraction, true)
+
+    return () => {
+      document.removeEventListener('touchstart', handleFirstInteraction, true)
+      document.removeEventListener('click', handleFirstInteraction, true)
+    }
+  }, [])
+
+  const [shouldFadeOthers, setShouldFadeOthers] = useState(false)
+  const typingTimeoutRef = useRef(null)
+
+  const handleTyping = () => {
+    // Fade out other entries when typing starts
+    setShouldFadeOthers(true)
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+    }
+    // Set timeout to fade back in after stopping typing
+    typingTimeoutRef.current = setTimeout(() => {
+      setShouldFadeOthers(false)
+    }, 2000) // 2 seconds after stopping typing
+  }
 
   const handleInputChange = (id, text) => {
     setEntries(prev => prev.map(entry => {
@@ -182,6 +235,14 @@ function App() {
       }
       return entry
     }))
+
+    // If text is cleared, immediately fade back in
+    if (text.length === 0) {
+      setShouldFadeOthers(false)
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+    }
   }
 
   const handleCommit = (id) => {
@@ -198,8 +259,26 @@ function App() {
     })
   }
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const handleContainerClick = (e) => {
+    // If clicking on container (not on a specific element), focus the active input
+    if (e.target === containerRef.current || e.target.classList.contains('container')) {
+      if (activeInputRef.current) {
+        activeInputRef.current.focus()
+      }
+    }
+  }
+
   return (
-    <div className="container">
+    <div className="container" ref={containerRef} onClick={handleContainerClick} onTouchStart={handleContainerClick}>
       {entries.map((entry) => {
         return (
           <Entry
@@ -207,8 +286,11 @@ function App() {
             entry={entry}
             onCommit={handleCommit}
             onInputChange={handleInputChange}
+            onTyping={entry.isActive ? handleTyping : undefined}
             timeFormatIndex={timeFormatIndex}
             cycleTimeFormat={cycleTimeFormat}
+            activeInputRef={activeInputRef}
+            shouldFade={shouldFadeOthers && !entry.isActive}
           />
         )
       })}
