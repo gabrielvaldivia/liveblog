@@ -223,6 +223,7 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
         onKeyDown={handleKeyDown}
         autoFocus={entry.isActive}
         rows={1}
+        cols={100}
       />
     </div>
   )
