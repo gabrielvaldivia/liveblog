@@ -1007,13 +1007,16 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     // Use textarea width for proper alignment
     const svgWidth = Math.max(maxWidth, availableWidth)
     
+    // Offset SVG by padding to align with text
+    const svgLeft = paddingLeft
+    
     return (
       <svg
-        className="sine-wave"
+        className="sine-wave v5-wave"
         style={{
           position: 'absolute',
           top: 0,
-          left: 0,
+          left: `${svgLeft}px`,
           width: `${svgWidth}px`,
           height: `${totalHeight}px`,
           pointerEvents: 'none',
@@ -1027,7 +1030,8 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
           <path
             key={index}
             d={wave.pathData}
-            stroke="rgba(0, 0, 0, 0.3)"
+            stroke="rgba(0, 0, 0, 0.15)"
+            className="v5-line"
             strokeWidth="1"
             fill="none"
             vectorEffect="non-scaling-stroke"
@@ -1086,7 +1090,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
           {entry.isActive && entry.text.length > 0 && entry.characterAmplitudes && entry.characterAmplitudes.length > 0 && renderSineWave(entry.text, entry.characterAmplitudes)}
           <textarea
             ref={textareaRef}
-            className="entry-input entry-input-v5"
+            className="entry-input entry-input-v5 v5-text"
             style={{ 
               ...combinedStyle, 
               fontSize: `${fontSize}px`, 
