@@ -123,10 +123,18 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
   useEffect(() => {
     if (entry.isActive && textareaRef.current) {
-      const timer = setTimeout(() => {
-        textareaRef.current?.focus()
-      }, 0)
-      return () => clearTimeout(timer)
+      textareaRef.current.focus()
+    }
+  }, [entry.isActive])
+
+  useEffect(() => {
+    if (entry.isActive && textareaRef.current) {
+      const interval = setInterval(() => {
+        if (textareaRef.current && document.activeElement !== textareaRef.current) {
+          textareaRef.current.focus()
+        }
+      }, 100)
+      return () => clearInterval(interval)
     }
   }, [entry.isActive])
 
@@ -170,6 +178,15 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
     // The handleInput will handle the resize
   }
 
+  const handleBlur = () => {
+    if (entry.isActive && textareaRef.current) {
+      // Refocus immediately to keep input always focused
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 0)
+    }
+  }
+
   if (entry.committed) {
     return (
       <div className="entry">
@@ -198,6 +215,7 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
         value={entry.text}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
         autoFocus={entry.isActive}
         rows={1}
         cols={100}
