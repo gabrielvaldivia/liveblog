@@ -30,7 +30,7 @@ body {
   width: 100%;
   max-width: 100vw;
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr);
+  grid-template-columns: max-content max-content 600px;
   gap: 8px;
   align-items: start;
   column-gap: 8px;
@@ -47,6 +47,7 @@ body {
   color: var(--timestamp-color);
   white-space: nowrap;
   text-align: left;
+  grid-column: 1;
 }
 
 .timestamp {
@@ -54,6 +55,7 @@ body {
   color: var(--timestamp-color);
   white-space: nowrap;
   text-align: left;
+  grid-column: 2;
 }
 
 .entry-text,
@@ -96,6 +98,7 @@ body {
   padding: 0;
   margin: 0;
   white-space: pre-wrap;
+  grid-column: 3;
 }
 
 .entry-text {
@@ -105,4 +108,5 @@ body {
   overflow-wrap: break-word;
   word-break: break-word;
   color: var(--text-color);
+  grid-column: 3;
 }
