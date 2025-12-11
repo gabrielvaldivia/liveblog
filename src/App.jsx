@@ -49,7 +49,7 @@ function useTheme() {
   }, [])
 }
 
-function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade }) {
+function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade, placeholder }) {
   const textareaRef = useRef(null)
   
   const [timestamp, setTimestamp] = useState(() => {
@@ -171,7 +171,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         autoFocus={entry.isActive}
-        placeholder={entry.isActive ? "write anything" : ""}
+        placeholder={entry.isActive ? placeholder : ""}
         rows={1}
         cols={100}
       />
@@ -187,6 +187,10 @@ function App() {
   ])
   const containerRef = useRef(null)
   const activeInputRef = useRef(null)
+  
+  // Detect if device is mobile (touch device)
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+  const placeholderText = isMobile ? "tap to write..." : "start writing..."
 
   // Focus active input on first touch/click anywhere on the page (for mobile keyboard)
   useEffect(() => {
@@ -292,6 +296,7 @@ function App() {
             cycleTimeFormat={cycleTimeFormat}
             activeInputRef={activeInputRef}
             shouldFade={shouldFadeOthers && !entry.isActive}
+            placeholder={placeholderText}
           />
         )
       })}
