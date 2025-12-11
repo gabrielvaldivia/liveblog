@@ -39,7 +39,7 @@ function useFormatPreference(key, defaultIndex) {
 
   useEffect(() => {
     localStorage.setItem(key, formatIndex.toString())
-  }, [formatIndex, key])
+  }, [formatIndex])
 
   const cycleFormat = () => {
     const maxIndex = key === 'dateFormat' ? dateFormats.length - 1 : timeFormats.length - 1
@@ -54,6 +54,14 @@ function isSameDay(date1, date2) {
   return date1.getFullYear() === date2.getFullYear() &&
          date1.getMonth() === date2.getMonth() &&
          date1.getDate() === date2.getDate()
+}
+
+function getEntryDate(entry) {
+  if (entry.frozenAt) {
+    return entry.frozenAt
+  }
+  // For active entries, use current date
+  return new Date()
 }
 
 function useTheme() {
@@ -73,44 +81,20 @@ function useTheme() {
 function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIndex, timeFormatIndex, cycleDateFormat, cycleTimeFormat }) {
   const textareaRef = useRef(null)
   
-  const getInitialDate = () => {
-    const index = dateFormatIndex ?? 0
-    const format = dateFormats[index] ?? dateFormats[0]
-    return format(new Date())
-  }
-  
-  const getInitialTime = () => {
-    const index = timeFormatIndex ?? 0
-    const format = timeFormats[index] ?? timeFormats[0]
-    return format(new Date())
-  }
-  
-  const [timestamp, setTimestamp] = useState(() => getInitialTime())
-  const [date, setDate] = useState(() => getInitialDate())
-
-  // Get the date to use for this entry (for comparison purposes)
-  const getEntryDate = () => {
-    if (entry.committed && entry.frozenAt) {
-      return entry.frozenAt
-    }
-    if (entry.frozen && entry.frozenAt) {
-      return entry.frozenAt
-    }
-    // For active entries, use current date
-    return new Date()
-  }
+  const [timestamp, setTimestamp] = useState(() => {
+    return timeFormats[timeFormatIndex](new Date())
+  })
+  const [date, setDate] = useState(() => {
+    return dateFormats[dateFormatIndex](new Date())
+  })
 
   useEffect(() => {
     const updateFormats = (dateObj) => {
-      const timeIndex = timeFormatIndex ?? 0
-      const dateIndex = dateFormatIndex ?? 0
-      const timeFormat = timeFormats[timeIndex] ?? timeFormats[0]
-      const dateFormat = dateFormats[dateIndex] ?? dateFormats[0]
-      setTimestamp(timeFormat(dateObj))
-      setDate(dateFormat(dateObj))
+      setTimestamp(timeFormats[timeFormatIndex](dateObj))
+      setDate(dateFormats[dateFormatIndex](dateObj))
     }
 
-    if (entry.committed && entry.frozenAt) {
+    if (entry.frozenAt) {
       updateFormats(entry.frozenAt)
       return
     }
@@ -121,22 +105,29 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
         updateFormats(new Date())
       }, 250)
       return () => clearInterval(interval)
-    } else if (entry.frozen && entry.frozenAt) {
-      updateFormats(entry.frozenAt)
     }
   }, [entry.isActive, entry.frozen, entry.frozenAt, entry.committed, dateFormatIndex, timeFormatIndex])
 
-  const entryDate = getEntryDate()
+  const entryDate = getEntryDate(entry)
   const shouldShowDate = !previousEntryDate || !isSameDay(entryDate, previousEntryDate)
 
-  useEffect(() => {
-    if (entry.isActive && textareaRef.current) {
-      textareaRef.current.focus()
-    }
-  }, [entry.isActive])
+  const dateElement = (
+    <div className="date clickable" onClick={cycleDateFormat} title="Click to change date format">
+      {shouldShowDate ? date : '\u00A0'}
+    </div>
+  )
+  const timestampElement = (
+    <div className="timestamp clickable" onClick={cycleTimeFormat} title="Click to change time format">
+      {timestamp}
+    </div>
+  )
 
   useEffect(() => {
     if (entry.isActive && textareaRef.current) {
+      // Immediate focus when entry becomes active
+      textareaRef.current.focus()
+      
+      // Keep it focused with interval
       const interval = setInterval(() => {
         if (textareaRef.current && document.activeElement !== textareaRef.current) {
           textareaRef.current.focus()
@@ -145,14 +136,6 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
       return () => clearInterval(interval)
     }
   }, [entry.isActive])
-
-  useEffect(() => {
-    if (textareaRef.current && entry.isActive) {
-      const textarea = textareaRef.current
-      textarea.style.height = 'auto'
-      textarea.style.height = `${textarea.scrollHeight}px`
-    }
-  }, [entry.text, entry.isActive])
 
   const handleInput = (e) => {
     const value = e.target.value
@@ -167,43 +150,22 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      const textarea = e.target
-      const cursorPosition = textarea.selectionStart
-      const textBeforeCursor = textarea.value.substring(0, cursorPosition)
-      const lines = textBeforeCursor.split('\n')
-      const currentLine = lines[lines.length - 1]
-      
-      // Always prevent default to stop line breaks
       e.preventDefault()
+      const textarea = e.target
+      const textBeforeCursor = textarea.value.substring(0, textarea.selectionStart)
+      const currentLine = textBeforeCursor.split('\n').pop() || ''
       
-      // Only commit if the current line is not empty
       if (currentLine.trim().length > 0) {
         onCommit(entry.id)
       }
-      // If the line is empty, do nothing (default is already prevented)
-    }
-    // Shift+Enter will create a new line (default behavior)
-    // The handleInput will handle the resize
-  }
-
-  const handleBlur = () => {
-    if (entry.isActive && textareaRef.current) {
-      // Refocus immediately to keep input always focused
-      setTimeout(() => {
-        textareaRef.current?.focus()
-      }, 0)
     }
   }
 
   if (entry.committed) {
     return (
       <div className="entry">
-        <div className="date clickable" onClick={cycleDateFormat} title="Click to change date format">
-          {shouldShowDate ? date : '\u00A0'}
-        </div>
-        <div className="timestamp clickable" onClick={cycleTimeFormat} title="Click to change time format">
-          {timestamp}
-        </div>
+        {dateElement}
+        {timestampElement}
         <div className="entry-text">{entry.text}</div>
       </div>
     )
@@ -211,19 +173,14 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
   return (
     <div className="entry">
-      <div className="date clickable" onClick={cycleDateFormat} title="Click to change date format">
-        {shouldShowDate ? date : '\u00A0'}
-      </div>
-      <div className="timestamp clickable" onClick={cycleTimeFormat} title="Click to change time format">
-        {timestamp}
-      </div>
+      {dateElement}
+      {timestampElement}
       <textarea
         ref={textareaRef}
         className="entry-input"
         value={entry.text}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
-        onBlur={handleBlur}
         autoFocus={entry.isActive}
         rows={1}
         cols={100}
@@ -272,14 +229,7 @@ function App() {
     <div className="container">
       {entries.map((entry, index) => {
         const previousEntry = index > 0 ? entries[index - 1] : null
-        let previousEntryDate = null
-        if (previousEntry) {
-          if (previousEntry.committed && previousEntry.frozenAt) {
-            previousEntryDate = previousEntry.frozenAt
-          } else if (previousEntry.frozen && previousEntry.frozenAt) {
-            previousEntryDate = previousEntry.frozenAt
-          }
-        }
+        const previousEntryDate = previousEntry ? getEntryDate(previousEntry) : null
         return (
           <Entry
             key={entry.id}
