@@ -74,15 +74,19 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
   const textareaRef = useRef(null)
   
   const getInitialDate = () => {
-    return dateFormats[dateFormatIndex](new Date())
+    const index = dateFormatIndex ?? 0
+    const format = dateFormats[index] ?? dateFormats[0]
+    return format(new Date())
   }
   
   const getInitialTime = () => {
-    return timeFormats[timeFormatIndex](new Date())
+    const index = timeFormatIndex ?? 0
+    const format = timeFormats[index] ?? timeFormats[0]
+    return format(new Date())
   }
   
-  const [timestamp, setTimestamp] = useState(getInitialTime)
-  const [date, setDate] = useState(getInitialDate)
+  const [timestamp, setTimestamp] = useState(() => getInitialTime())
+  const [date, setDate] = useState(() => getInitialDate())
 
   // Get the date to use for this entry (for comparison purposes)
   const getEntryDate = () => {
@@ -98,8 +102,12 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
   useEffect(() => {
     const updateFormats = (dateObj) => {
-      setTimestamp(timeFormats[timeFormatIndex](dateObj))
-      setDate(dateFormats[dateFormatIndex](dateObj))
+      const timeIndex = timeFormatIndex ?? 0
+      const dateIndex = dateFormatIndex ?? 0
+      const timeFormat = timeFormats[timeIndex] ?? timeFormats[0]
+      const dateFormat = dateFormats[dateIndex] ?? dateFormats[0]
+      setTimestamp(timeFormat(dateObj))
+      setDate(dateFormat(dateObj))
     }
 
     if (entry.committed && entry.frozenAt) {
