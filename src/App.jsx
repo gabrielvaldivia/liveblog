@@ -2,22 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 
 const dateFormats = [
   (date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  },
-  (date) => {
-    const year = String(date.getFullYear()).slice(-2)
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  },
-  (date) => {
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
-  },
-  (date) => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
   },
@@ -26,12 +10,6 @@ const dateFormats = [
     const day = String(date.getDate()).padStart(2, '0')
     const year = date.getFullYear()
     return `${month}/${day}/${year}`
-  },
-  (date) => {
-    const day = String(date.getDate()).padStart(2, '0')
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const year = date.getFullYear()
-    return `${day}/${month}/${year}`
   }
 ]
 
@@ -43,11 +21,6 @@ const timeFormats = [
     return `${h}:${m}:${s}`
   },
   (date) => {
-    const h = String(date.getHours()).padStart(2, '0')
-    const m = String(date.getMinutes()).padStart(2, '0')
-    return `${h}:${m}`
-  },
-  (date) => {
     let hours = date.getHours()
     const minutes = String(date.getMinutes()).padStart(2, '0')
     const seconds = String(date.getSeconds()).padStart(2, '0')
@@ -55,14 +28,6 @@ const timeFormats = [
     hours = hours % 12
     hours = hours ? hours : 12
     return `${hours}:${minutes}:${seconds} ${ampm}`
-  },
-  (date) => {
-    let hours = date.getHours()
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const ampm = hours >= 12 ? 'PM' : 'AM'
-    hours = hours % 12
-    hours = hours ? hours : 12
-    return `${hours}:${minutes} ${ampm}`
   }
 ]
 
@@ -158,10 +123,18 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
   useEffect(() => {
     if (entry.isActive && textareaRef.current) {
-      const timer = setTimeout(() => {
-        textareaRef.current?.focus()
-      }, 0)
-      return () => clearTimeout(timer)
+      textareaRef.current.focus()
+    }
+  }, [entry.isActive])
+
+  useEffect(() => {
+    if (entry.isActive && textareaRef.current) {
+      const interval = setInterval(() => {
+        if (textareaRef.current && document.activeElement !== textareaRef.current) {
+          textareaRef.current.focus()
+        }
+      }, 100)
+      return () => clearInterval(interval)
     }
   }, [entry.isActive])
 
@@ -186,11 +159,32 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      const textarea = e.target
+      const cursorPosition = textarea.selectionStart
+      const textBeforeCursor = textarea.value.substring(0, cursorPosition)
+      const lines = textBeforeCursor.split('\n')
+      const currentLine = lines[lines.length - 1]
+      
+      // Always prevent default to stop line breaks
       e.preventDefault()
-      onCommit(entry.id)
+      
+      // Only commit if the current line is not empty
+      if (currentLine.trim().length > 0) {
+        onCommit(entry.id)
+      }
+      // If the line is empty, do nothing (default is already prevented)
     }
     // Shift+Enter will create a new line (default behavior)
     // The handleInput will handle the resize
+  }
+
+  const handleBlur = () => {
+    if (entry.isActive && textareaRef.current) {
+      // Refocus immediately to keep input always focused
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 0)
+    }
   }
 
   if (entry.committed) {
@@ -221,6 +215,7 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
         value={entry.text}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
         autoFocus={entry.isActive}
         rows={1}
         cols={100}
