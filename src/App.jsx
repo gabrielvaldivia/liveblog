@@ -162,7 +162,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
   // Calculate spacing for v2 based on pause duration
   // Linear growth - converts milliseconds to seconds, then multiplies by constant
   const spacingStyle = version === 'v2' && currentPauseDuration > 0 && entry.id > 0 ? {
-    marginTop: `${(currentPauseDuration / 1000) * 2}px`,
+    marginTop: `${(currentPauseDuration / 1000) * 4}px`,
     transition: 'margin-top 0.1s ease-out'
   } : version === 'v2' && entry.id === 0 ? {
     marginTop: '0px'
