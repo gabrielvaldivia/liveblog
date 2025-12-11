@@ -51,6 +51,7 @@ function useTheme() {
 
 function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade, placeholder }) {
   const textareaRef = useRef(null)
+  const [isFocused, setIsFocused] = useState(false)
   
   const [timestamp, setTimestamp] = useState(() => {
     return timeFormats[timeFormatIndex](new Date())
@@ -90,28 +91,31 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
       
       // Immediate focus when entry becomes active
       textareaRef.current.focus()
+      setIsFocused(true)
       
       // Keep it focused with interval
       const interval = setInterval(() => {
         if (textareaRef.current && document.activeElement !== textareaRef.current) {
           textareaRef.current.focus()
+          setIsFocused(true)
         }
       }, 50)
       
       // Also refocus on blur
-      const handleBlur = () => {
+      const handleBlurRefocus = () => {
         if (textareaRef.current) {
           // Use setTimeout to ensure focus happens after any other event handlers
           setTimeout(() => {
             if (textareaRef.current && entry.isActive) {
               textareaRef.current.focus()
+              setIsFocused(true)
             }
           }, 0)
         }
       }
       
       const textarea = textareaRef.current
-      textarea.addEventListener('blur', handleBlur)
+      textarea.addEventListener('blur', handleBlurRefocus)
       
       return () => {
         clearInterval(interval)
@@ -120,6 +124,8 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
           activeInputRef.current = null
         }
       }
+    } else if (!entry.isActive) {
+      setIsFocused(false)
     }
   }, [entry.isActive, activeInputRef])
 
@@ -150,6 +156,24 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     }
   }
 
+  const handleFocus = () => {
+    setIsFocused(true)
+  }
+
+  const handleBlur = (e) => {
+    // Only set focused to false if we're not immediately refocusing
+    if (entry.isActive) {
+      // Delay to check if we're refocusing
+      setTimeout(() => {
+        if (textareaRef.current && document.activeElement !== textareaRef.current) {
+          setIsFocused(false)
+        }
+      }, 100)
+    } else {
+      setIsFocused(false)
+    }
+  }
+
   const fadeClass = shouldFade ? 'faded' : ''
 
   if (entry.committed) {
@@ -170,8 +194,10 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
         value={entry.text}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         autoFocus={entry.isActive}
-        placeholder={entry.isActive ? placeholder : ""}
+        placeholder={entry.isActive && !isFocused && entry.text === "" ? placeholder : ""}
         rows={1}
         cols={100}
       />
