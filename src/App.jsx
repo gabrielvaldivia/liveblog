@@ -171,6 +171,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         autoFocus={entry.isActive}
+        placeholder={entry.isActive ? "write anything" : ""}
         rows={1}
         cols={100}
       />
