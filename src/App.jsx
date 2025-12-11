@@ -2,22 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 
 const dateFormats = [
   (date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  },
-  (date) => {
-    const year = String(date.getFullYear()).slice(-2)
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  },
-  (date) => {
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
-  },
-  (date) => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
   },
@@ -26,12 +10,6 @@ const dateFormats = [
     const day = String(date.getDate()).padStart(2, '0')
     const year = date.getFullYear()
     return `${month}/${day}/${year}`
-  },
-  (date) => {
-    const day = String(date.getDate()).padStart(2, '0')
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const year = date.getFullYear()
-    return `${day}/${month}/${year}`
   }
 ]
 
@@ -43,11 +21,6 @@ const timeFormats = [
     return `${h}:${m}:${s}`
   },
   (date) => {
-    const h = String(date.getHours()).padStart(2, '0')
-    const m = String(date.getMinutes()).padStart(2, '0')
-    return `${h}:${m}`
-  },
-  (date) => {
     let hours = date.getHours()
     const minutes = String(date.getMinutes()).padStart(2, '0')
     const seconds = String(date.getSeconds()).padStart(2, '0')
@@ -55,14 +28,6 @@ const timeFormats = [
     hours = hours % 12
     hours = hours ? hours : 12
     return `${hours}:${minutes}:${seconds} ${ampm}`
-  },
-  (date) => {
-    let hours = date.getHours()
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const ampm = hours >= 12 ? 'PM' : 'AM'
-    hours = hours % 12
-    hours = hours ? hours : 12
-    return `${hours}:${minutes} ${ampm}`
   }
 ]
 
