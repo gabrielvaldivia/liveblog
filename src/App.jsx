@@ -49,7 +49,7 @@ function useVersion() {
 }
 
 function VersionSwitcher({ version, setVersion }) {
-  const versions = ['v1', 'v2']
+  const versions = ['v1', 'v2', 'v3']
   
   return (
     <div className="version-switcher">
@@ -80,10 +80,14 @@ function useTheme() {
   }, [])
 }
 
-function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade, placeholder, version, lastCommitTimeRef }) {
+function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade, placeholder, version, lastCommitTimeRef, onFontWidthChange }) {
   const textareaRef = useRef(null)
+  const contentEditableRef = useRef(null)
   const [isFocused, setIsFocused] = useState(false)
   const [currentPauseDuration, setCurrentPauseDuration] = useState(0)
+  const keystrokeTimesRef = useRef([])
+  const lastKeystrokeTimeRef = useRef(null)
+  const [fontWidth, setFontWidth] = useState(() => 87.5) // Start at middle (between 25 and 150)
   
   const [timestamp, setTimestamp] = useState(() => {
     return timeFormats[timeFormatIndex](new Date())
@@ -114,9 +118,9 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     </div>
   )
 
-  // Update pause duration in real-time for v2 when entry is active and empty
+  // Update pause duration in real-time for v2 and v3 when entry is active and empty
   useEffect(() => {
-    if (version !== 'v2') {
+    if (version !== 'v2' && version !== 'v3') {
       setCurrentPauseDuration(0)
       return
     }
@@ -159,82 +163,318 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     }
   }, [version, entry.isActive, entry.text.length, entry.id, entry.startedAt, entry.committed, entry.pauseDuration, lastCommitTimeRef])
 
-  // Calculate spacing for v2 based on pause duration
+  // Calculate spacing for v2 and v3 based on pause duration
   // Linear growth - converts milliseconds to seconds, then multiplies by constant
-  const spacingStyle = version === 'v2' && currentPauseDuration > 0 && entry.id > 0 ? {
+  const spacingStyle = (version === 'v2' || version === 'v3') && currentPauseDuration > 0 && entry.id > 0 ? {
     marginTop: `${(currentPauseDuration / 1000) * 4}px`,
     transition: 'margin-top 0.1s ease-out'
-  } : version === 'v2' && entry.id === 0 ? {
+  } : (version === 'v2' || version === 'v3') && entry.id === 0 ? {
     marginTop: '0px'
   } : {}
+  
+  // Render text with per-character widths for v3 committed entries
+  const renderTextWithWidths = () => {
+    if (version !== 'v3' || !entry.committed || !entry.characterWidths || entry.characterWidths.length === 0) {
+      return entry.text
+    }
+    
+    return entry.text.split('').map((char, index) => {
+      const width = entry.characterWidths[index] || 87.5
+      return (
+        <span
+          key={index}
+          style={{
+            fontVariationSettings: `'wdth' ${width}`,
+            fontStretch: `${width}%`
+          }}
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </span>
+      )
+    })
+  }
+  
+  // For active v3 entries, we'll use contenteditable with spans
+  const renderActiveTextWithWidths = () => {
+    if (version !== 'v3' || entry.committed) {
+      return null
+    }
+    
+    if (!entry.characterWidths || entry.characterWidths.length === 0 || entry.text.length === 0) {
+      return null
+    }
+    
+    return entry.text.split('').map((char, index) => {
+      const width = entry.characterWidths[index] || 87.5
+      const span = document.createElement('span')
+      span.style.fontVariationSettings = `'wdth' ${width}`
+      span.style.fontStretch = `${width}%`
+      span.textContent = char === ' ' ? '\u00A0' : char
+      return span
+    })
+  }
+
+  // Reset font width tracking when entry becomes inactive
+  useEffect(() => {
+    if (!entry.isActive && version === 'v3') {
+      keystrokeTimesRef.current = []
+      lastKeystrokeTimeRef.current = null
+      setFontWidth(87.5)
+    }
+  }, [entry.isActive, version])
+  
+  // Update contenteditable content for v3 while preserving cursor
+  useEffect(() => {
+    if (version === 'v3' && contentEditableRef.current && entry.isActive && !entry.committed) {
+      // Save cursor position
+      const selection = window.getSelection()
+      let cursorOffset = entry.text.length
+      if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0)
+        const div = contentEditableRef.current
+        let offset = 0
+        const walker = document.createTreeWalker(
+          div,
+          NodeFilter.SHOW_TEXT,
+          null
+        )
+        let node
+        while ((node = walker.nextNode())) {
+          if (node === range.startContainer) {
+            offset += range.startOffset
+            break
+          }
+          offset += node.textContent.length
+        }
+        cursorOffset = offset
+      }
+      
+      // Rebuild content with spans
+      if (entry.characterWidths && entry.characterWidths.length > 0 && entry.text.length > 0) {
+        const fragment = document.createDocumentFragment()
+        entry.text.split('').forEach((char, index) => {
+          const width = entry.characterWidths[index] || 87.5
+          const span = document.createElement('span')
+          span.style.fontVariationSettings = `'wdth' ${width}`
+          span.style.fontStretch = `${width}%`
+          span.textContent = char === ' ' ? '\u00A0' : char
+          fragment.appendChild(span)
+        })
+        
+        contentEditableRef.current.innerHTML = ''
+        contentEditableRef.current.appendChild(fragment)
+        
+        // Restore cursor position
+        if (cursorOffset <= entry.text.length) {
+          const walker = document.createTreeWalker(
+            contentEditableRef.current,
+            NodeFilter.SHOW_TEXT,
+            null
+          )
+          let offset = 0
+          let node
+          while ((node = walker.nextNode()) && offset + node.textContent.length < cursorOffset) {
+            offset += node.textContent.length
+          }
+          if (node) {
+            const range = document.createRange()
+            const newOffset = Math.min(cursorOffset - offset, node.textContent.length)
+            range.setStart(node, newOffset)
+            range.setEnd(node, newOffset)
+            selection.removeAllRanges()
+            selection.addRange(range)
+          }
+        }
+      } else if (entry.text.length === 0) {
+        contentEditableRef.current.innerHTML = ''
+      }
+    }
+  }, [entry.text, entry.characterWidths, version, entry.isActive, entry.committed])
 
   useEffect(() => {
-    if (entry.isActive && textareaRef.current) {
+    const inputElement = version === 'v3' ? contentEditableRef.current : textareaRef.current
+    
+    if (entry.isActive && inputElement) {
       // Update the active input ref for App component
       if (activeInputRef) {
-        activeInputRef.current = textareaRef.current
+        activeInputRef.current = inputElement
       }
       
       // Immediate focus when entry becomes active
-      textareaRef.current.focus()
+      inputElement.focus()
       setIsFocused(true)
       
       // Keep it focused with interval
       const interval = setInterval(() => {
-        if (textareaRef.current && document.activeElement !== textareaRef.current) {
-          textareaRef.current.focus()
+        if (inputElement && document.activeElement !== inputElement) {
+          inputElement.focus()
           setIsFocused(true)
         }
       }, 50)
       
       // Also refocus on blur
       const handleBlurRefocus = () => {
-        if (textareaRef.current) {
+        if (inputElement) {
           // Use setTimeout to ensure focus happens after any other event handlers
           setTimeout(() => {
-            if (textareaRef.current && entry.isActive) {
-              textareaRef.current.focus()
+            if (inputElement && entry.isActive) {
+              inputElement.focus()
               setIsFocused(true)
             }
           }, 0)
         }
       }
       
-      const textarea = textareaRef.current
-      textarea.addEventListener('blur', handleBlurRefocus)
+      inputElement.addEventListener('blur', handleBlurRefocus)
       
       return () => {
         clearInterval(interval)
-        textarea.removeEventListener('blur', handleBlurRefocus)
-        if (activeInputRef && activeInputRef.current === textareaRef.current) {
+        inputElement.removeEventListener('blur', handleBlurRefocus)
+        if (activeInputRef && activeInputRef.current === inputElement) {
           activeInputRef.current = null
         }
       }
     } else if (!entry.isActive) {
       setIsFocused(false)
     }
-  }, [entry.isActive, activeInputRef])
+  }, [entry.isActive, activeInputRef, version])
+  
 
   const handleInput = (e) => {
-    onInputChange(entry.id, e.target.value)
+    const now = Date.now()
+    let newText
+    let selectionStart
+    
+    if (version === 'v3' && e.target.contentEditable === 'true') {
+      // ContentEditable div - get text from all text nodes
+      const div = e.target
+      newText = div.textContent || div.innerText || ''
+      const selection = window.getSelection()
+      if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0)
+        // Calculate cursor position by counting characters before cursor
+        let offset = 0
+        const walker = document.createTreeWalker(
+          div,
+          NodeFilter.SHOW_TEXT,
+          null
+        )
+        let node
+        while ((node = walker.nextNode())) {
+          if (node === range.startContainer) {
+            offset += range.startOffset
+            break
+          }
+          offset += node.textContent.length
+        }
+        selectionStart = offset
+      } else {
+        selectionStart = newText.length
+      }
+    } else {
+      // Textarea
+      newText = e.target.value
+      selectionStart = e.target.selectionStart
+    }
+    
+    // Track typing speed for v3 - calculate width for each new character
+    if (version === 'v3' && entry.isActive) {
+      const oldLength = entry.text.length
+      const newLength = newText.length
+      const newCharacterWidths = [...(entry.characterWidths || [])]
+      
+      if (newLength > oldLength) {
+        // Characters were added
+        const addedChars = newLength - oldLength
+        
+        // Calculate width based on time since last keystroke
+        let width = 87.5 // Default to middle
+        
+        if (lastKeystrokeTimeRef.current !== null) {
+          const interval = now - lastKeystrokeTimeRef.current
+          
+          // Map typing speed to font width
+          // Fast typing (low interval) → narrow (25)
+          // Slow typing (high interval) → wide (150)
+          const minInterval = 75   // Very fast typing (75ms between chars)
+          const maxInterval = 200  // Slow typing (200ms between chars)
+          const clampedInterval = Math.max(minInterval, Math.min(maxInterval, interval))
+          
+          // Inverse mapping: fast = narrow, slow = wide
+          const normalized = (clampedInterval - minInterval) / (maxInterval - minInterval)
+          width = 25 + (normalized * 125) // Range from 25 (narrow) to 150 (wide)
+        }
+        
+        // Insert width for each new character at the cursor position
+        // For simplicity, if we can't determine exact position, append to end
+        const insertPos = Math.min(selectionStart, newCharacterWidths.length)
+        for (let i = 0; i < addedChars; i++) {
+          newCharacterWidths.splice(insertPos + i, 0, width)
+        }
+        
+        lastKeystrokeTimeRef.current = now
+        setFontWidth(width)
+      } else if (newLength < oldLength) {
+        // Characters were deleted
+        const deletedCount = oldLength - newLength
+        // Remove widths at cursor position or from end
+        const deletePos = Math.min(selectionStart, newCharacterWidths.length)
+        newCharacterWidths.splice(deletePos, deletedCount)
+        lastKeystrokeTimeRef.current = null
+        setFontWidth(87.5) // Reset to middle
+      } else {
+        // Text might have been replaced or modified, sync widths array
+        if (newCharacterWidths.length !== newLength) {
+          // Adjust array to match text length
+          while (newCharacterWidths.length < newLength) {
+            newCharacterWidths.push(87.5)
+          }
+          while (newCharacterWidths.length > newLength) {
+            newCharacterWidths.pop()
+          }
+        }
+      }
+      
+      onInputChange(entry.id, newText, newCharacterWidths, selectionStart)
+    } else {
+      onInputChange(entry.id, newText, entry.characterWidths, selectionStart)
+    }
     
     // Track typing activity (not Enter key)
     if (onTyping) {
       onTyping()
     }
     
-    // Auto-resize
-    const textarea = e.target
-    textarea.style.height = 'auto'
-    textarea.style.height = `${textarea.scrollHeight}px`
+    // Auto-resize for textarea
+    if (e.target.tagName === 'TEXTAREA') {
+      const textarea = e.target
+      textarea.style.height = 'auto'
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
   }
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      const textarea = e.target
-      const textBeforeCursor = textarea.value.substring(0, textarea.selectionStart)
-      const currentLine = textBeforeCursor.split('\n').pop() || ''
+      
+      let currentLine = ''
+      
+      if (version === 'v3' && e.target.contentEditable === 'true') {
+        // For v3 contenteditable, get text before cursor
+        const div = e.target
+        const selection = window.getSelection()
+        if (selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0)
+          // Get all text before cursor
+          const textBeforeCursor = div.textContent.substring(0, range.startOffset)
+          currentLine = textBeforeCursor.split('\n').pop() || ''
+        }
+      } else {
+        // For v1 and v2 textarea
+        const textarea = e.target
+        const textBeforeCursor = textarea.value.substring(0, textarea.selectionStart)
+        currentLine = textBeforeCursor.split('\n').pop() || ''
+      }
       
       if (currentLine.trim().length > 0) {
         onCommit(entry.id)
@@ -262,22 +502,48 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
 
   const fadeClass = version === 'v1' && shouldFade ? 'faded' : ''
 
+  // Combine spacing styles
+  const combinedStyle = { ...spacingStyle }
+
   if (entry.committed) {
     return (
       <div className="entry">
         {version === 'v1' && timestampElement(fadeClass)}
-        <div className={`entry-text ${fadeClass}`} style={spacingStyle}>{entry.text}</div>
+        <div className={`entry-text ${fadeClass}`} style={combinedStyle}>
+          {version === 'v3' ? renderTextWithWidths() : entry.text}
+        </div>
       </div>
     )
   }
 
+  // For v3, use contenteditable div to allow per-character styling
+  if (version === 'v3') {
+    return (
+      <div className="entry">
+        <div
+          ref={contentEditableRef}
+          className="entry-input entry-input-contenteditable"
+          style={combinedStyle}
+          contentEditable="true"
+          suppressContentEditableWarning={true}
+          onInput={handleInput}
+          onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          data-placeholder={entry.isActive && !isFocused && entry.text === "" ? placeholder : ""}
+        />
+      </div>
+    )
+  }
+
+  // For v1 and v2, use textarea
   return (
     <div className="entry">
       {version === 'v1' && timestampElement()}
       <textarea
         ref={textareaRef}
         className="entry-input"
-        style={spacingStyle}
+        style={combinedStyle}
         value={entry.text}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
@@ -297,7 +563,7 @@ function App() {
   const [version, setVersion] = useVersion()
   const [timeFormatIndex, cycleTimeFormat] = useFormatPreference('timeFormat', 0)
   const [entries, setEntries] = useState([
-    { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null }
+    { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null, fontWidth: null, characterWidths: [] }
   ])
   const containerRef = useRef(null)
   const activeInputRef = useRef(null)
@@ -345,14 +611,28 @@ function App() {
     }
   }
 
-  const handleInputChange = (id, text) => {
+  const handleFontWidthChange = (id, width) => {
+    setEntries(prev => prev.map(entry => {
+      if (entry.id === id) {
+        return { ...entry, fontWidth: width }
+      }
+      return entry
+    }))
+  }
+
+  const handleInputChange = (id, text, characterWidths = null, selectionStart = null) => {
     const now = Date.now()
     setEntries(prev => prev.map(entry => {
       if (entry.id === id) {
         const updated = { ...entry, text }
         
-        // Record when typing starts (first character) for v2
-        if (!entry.startedAt && text.length > 0 && version === 'v2') {
+        // Update character widths if provided (for v3)
+        if (characterWidths !== null && version === 'v3') {
+          updated.characterWidths = characterWidths
+        }
+        
+        // Record when typing starts (first character) for v2 and v3
+        if (!entry.startedAt && text.length > 0 && (version === 'v2' || version === 'v3')) {
           updated.startedAt = now
           // Store the pause duration at the moment typing starts
           if (lastCommitTimeRef.current) {
@@ -361,9 +641,10 @@ function App() {
         }
         
         // Reset startedAt and pauseDuration if text is cleared, so spacing can grow again
-        if (entry.startedAt && text.length === 0 && version === 'v2') {
+        if (entry.startedAt && text.length === 0 && (version === 'v2' || version === 'v3')) {
           updated.startedAt = null
           updated.pauseDuration = null
+          updated.characterWidths = []
         }
         
         if (!entry.frozen && text.length > 0) {
@@ -395,14 +676,15 @@ function App() {
           if (!pauseDuration && entry.startedAt && lastCommitTimeRef.current) {
             pauseDuration = entry.startedAt - lastCommitTimeRef.current
           }
-          return { ...entry, committed: true, isActive: false, pauseDuration: pauseDuration || 0 }
+          // Store character widths for v3
+          return { ...entry, committed: true, isActive: false, pauseDuration: pauseDuration || 0, characterWidths: entry.characterWidths || [] }
         }
         return { ...entry, isActive: false }
       })
       
       const newId = prev.length
       lastCommitTimeRef.current = now
-      return [...updated, { id: newId, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null }]
+      return [...updated, { id: newId, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null, fontWidth: null, characterWidths: [] }]
     })
   }
 
@@ -448,6 +730,7 @@ function App() {
               placeholder={placeholderText}
               version={version}
               lastCommitTimeRef={lastCommitTimeRef}
+              onFontWidthChange={version === 'v3' ? handleFontWidthChange : undefined}
             />
           )
         })}
