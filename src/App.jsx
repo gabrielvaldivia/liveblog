@@ -67,7 +67,7 @@ function useFontSize() {
 }
 
 function VersionSwitcher({ version, setVersion }) {
-  const versions = ['v1', 'v2', 'v3', 'v4', 'v5']
+  const versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6']
   
   return (
     <div className="version-switcher">
@@ -181,6 +181,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
   const [fontWidth, setFontWidth] = useState(() => 87.5) // Start at middle (between 25 and 150)
   const [fontOpacity, setFontOpacity] = useState(() => 1) // Start at full opacity
   const [waveAmplitude, setWaveAmplitude] = useState(() => 0) // Start at 0 (low amplitude)
+  const [letterSpacing, setLetterSpacing] = useState(() => 0) // Start at 0 (normal spacing)
   const [textWidth, setTextWidth] = useState(0)
   const textContainerRef = useRef(null)
   
@@ -218,9 +219,9 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     </div>
   )
 
-  // Update pause duration in real-time for v2, v3, and v4 when entry is active and empty
+    // Update pause duration in real-time for v2, v3, v4, v5, and v6 when entry is active and empty
   useEffect(() => {
-    if (version !== 'v2' && version !== 'v3' && version !== 'v4') {
+    if (version !== 'v2' && version !== 'v3' && version !== 'v4' && version !== 'v5' && version !== 'v6') {
       setCurrentPauseDuration(0)
       return
     }
@@ -263,12 +264,12 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     }
   }, [version, entry.isActive, entry.text.length, entry.id, entry.startedAt, entry.committed, entry.pauseDuration, lastCommitTimeRef])
 
-  // Calculate spacing for v2, v3, and v4 based on pause duration
+  // Calculate spacing for v2, v3, v4, v5, and v6 based on pause duration
   // Linear growth - converts milliseconds to seconds, then multiplies by constant
-  const spacingStyle = (version === 'v2' || version === 'v3' || version === 'v4') && currentPauseDuration > 0 && entry.id > 0 ? {
+  const spacingStyle = (version === 'v2' || version === 'v3' || version === 'v4' || version === 'v5' || version === 'v6') && currentPauseDuration > 0 && entry.id > 0 ? {
     marginTop: `${(currentPauseDuration / 1000) * 4}px`,
     transition: 'margin-top 0.1s ease-out'
-  } : (version === 'v2' || version === 'v3' || version === 'v4') && entry.id === 0 ? {
+  } : (version === 'v2' || version === 'v3' || version === 'v4' || version === 'v5' || version === 'v6') && entry.id === 0 ? {
     marginTop: '0px'
   } : {}
   
@@ -286,6 +287,27 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
           style={{
             fontVariationSettings: `'wdth' ${width}`,
             fontStretch: `${width}%`
+          }}
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </span>
+      )
+    })
+  }
+  
+  // Render text with per-character letter spacing for v6 committed entries
+  const renderTextWithLetterSpacings = () => {
+    if (version !== 'v6' || !entry.committed || !entry.characterLetterSpacings || entry.characterLetterSpacings.length === 0) {
+      return entry.text
+    }
+    
+    return entry.text.split('').map((char, index) => {
+      const spacing = entry.characterLetterSpacings[index] !== undefined ? entry.characterLetterSpacings[index] : 0
+      return (
+        <span
+          key={index}
+          style={{
+            letterSpacing: `${spacing}px`
           }}
         >
           {char === ' ' ? '\u00A0' : char}
@@ -353,6 +375,12 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
       keystrokeTimesRef.current = []
       lastKeystrokeTimeRef.current = null
       setWaveAmplitude(8)
+    }
+    // Reset letter spacing tracking when entry becomes inactive
+    if (!entry.isActive && version === 'v6') {
+      keystrokeTimesRef.current = []
+      lastKeystrokeTimeRef.current = null
+      setLetterSpacing(0)
     }
   }, [entry.isActive, version])
   
@@ -424,6 +452,73 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     }
   }, [entry.text, entry.characterWidths, version, entry.isActive, entry.committed])
   
+  // Update contenteditable content for v6 while preserving cursor
+  useEffect(() => {
+    if (version === 'v6' && contentEditableRef.current && entry.isActive && !entry.committed) {
+      // Save cursor position
+      const selection = window.getSelection()
+      let cursorOffset = entry.text.length
+      if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0)
+        const div = contentEditableRef.current
+        let offset = 0
+        const walker = document.createTreeWalker(
+          div,
+          NodeFilter.SHOW_TEXT,
+          null
+        )
+        let node
+        while ((node = walker.nextNode())) {
+          if (node === range.startContainer) {
+            offset += range.startOffset
+            break
+          }
+          offset += node.textContent.length
+        }
+        cursorOffset = offset
+      }
+      
+      // Rebuild content with spans
+      if (entry.characterLetterSpacings && entry.characterLetterSpacings.length > 0 && entry.text.length > 0) {
+        const fragment = document.createDocumentFragment()
+        entry.text.split('').forEach((char, index) => {
+          const spacing = entry.characterLetterSpacings[index] !== undefined ? entry.characterLetterSpacings[index] : 0
+          const span = document.createElement('span')
+          span.style.letterSpacing = `${spacing}px`
+          span.textContent = char === ' ' ? '\u00A0' : char
+          fragment.appendChild(span)
+        })
+        
+        contentEditableRef.current.innerHTML = ''
+        contentEditableRef.current.appendChild(fragment)
+        
+        // Restore cursor position
+        if (cursorOffset <= entry.text.length) {
+          const walker = document.createTreeWalker(
+            contentEditableRef.current,
+            NodeFilter.SHOW_TEXT,
+            null
+          )
+          let offset = 0
+          let node
+          while ((node = walker.nextNode()) && offset + node.textContent.length < cursorOffset) {
+            offset += node.textContent.length
+          }
+          if (node) {
+            const range = document.createRange()
+            const newOffset = Math.min(cursorOffset - offset, node.textContent.length)
+            range.setStart(node, newOffset)
+            range.setEnd(node, newOffset)
+            selection.removeAllRanges()
+            selection.addRange(range)
+          }
+        }
+      } else if (entry.text.length === 0) {
+        contentEditableRef.current.innerHTML = ''
+      }
+    }
+  }, [entry.text, entry.characterLetterSpacings, version, entry.isActive, entry.committed])
+  
   // Update contenteditable content for v4 while preserving cursor
   useEffect(() => {
     if (version === 'v4' && contentEditableRef.current && entry.isActive && !entry.committed) {
@@ -492,7 +587,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
   }, [entry.text, entry.characterOpacities, version, entry.isActive, entry.committed])
 
   useEffect(() => {
-    const inputElement = (version === 'v3' || version === 'v4') ? contentEditableRef.current : textareaRef.current
+    const inputElement = (version === 'v3' || version === 'v4' || version === 'v6') ? contentEditableRef.current : textareaRef.current
     
     if (entry.isActive && inputElement) {
       // Update the active input ref for App component
@@ -545,7 +640,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     let newText
     let selectionStart
     
-    if ((version === 'v3' || version === 'v4') && e.target.contentEditable === 'true') {
+    if ((version === 'v3' || version === 'v4' || version === 'v6') && e.target.contentEditable === 'true') {
       // ContentEditable div - get text from all text nodes
       const div = e.target
       newText = div.textContent || div.innerText || ''
@@ -753,8 +848,64 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
       }
       
       onInputChange(entry.id, newText, entry.characterWidths, selectionStart, entry.characterOpacities, newCharacterAmplitudes)
+    } else if (version === 'v6' && entry.isActive) {
+      // Track typing speed for v6 - calculate letter spacing for each new character
+      const oldLength = entry.text.length
+      const newLength = newText.length
+      const newCharacterLetterSpacings = [...(entry.characterLetterSpacings || [])]
+      
+      if (newLength > oldLength) {
+        // Characters were added
+        const addedChars = newLength - oldLength
+        
+        // Calculate letter spacing based on time since last keystroke
+        let spacing = 0 // Default to normal spacing
+        
+        if (lastKeystrokeTimeRef.current !== null) {
+          const interval = now - lastKeystrokeTimeRef.current
+          
+          // Map typing speed to letter spacing
+          // Fast typing (low interval) → 0px spacing (minimum)
+          // Slow typing (high interval) → increasing spacing (no maximum)
+          const minInterval = 75   // Very fast typing (75ms between chars)
+          
+          // Calculate spacing: 0px for fast typing, increasing proportionally for slower typing
+          // 0.03px per ms above the minimum interval
+          spacing = Math.max(0, (interval - minInterval) * 0.03)
+        }
+        
+        // Insert spacing for each new character at the cursor position
+        const insertPos = Math.min(selectionStart, newCharacterLetterSpacings.length)
+        for (let i = 0; i < addedChars; i++) {
+          newCharacterLetterSpacings.splice(insertPos + i, 0, spacing)
+        }
+        
+        lastKeystrokeTimeRef.current = now
+        setLetterSpacing(spacing)
+      } else if (newLength < oldLength) {
+        // Characters were deleted
+        const deletedCount = oldLength - newLength
+        // Remove spacings at cursor position or from end
+        const deletePos = Math.min(selectionStart, newCharacterLetterSpacings.length)
+        newCharacterLetterSpacings.splice(deletePos, deletedCount)
+        lastKeystrokeTimeRef.current = null
+        setLetterSpacing(0) // Reset to normal spacing
+      } else {
+        // Text might have been replaced or modified, sync spacings array
+        if (newCharacterLetterSpacings.length !== newLength) {
+          // Adjust array to match text length
+          while (newCharacterLetterSpacings.length < newLength) {
+            newCharacterLetterSpacings.push(0)
+          }
+          while (newCharacterLetterSpacings.length > newLength) {
+            newCharacterLetterSpacings.pop()
+          }
+        }
+      }
+      
+      onInputChange(entry.id, newText, entry.characterWidths, selectionStart, entry.characterOpacities, entry.characterAmplitudes, newCharacterLetterSpacings)
     } else {
-      onInputChange(entry.id, newText, entry.characterWidths, selectionStart, entry.characterOpacities, entry.characterAmplitudes)
+      onInputChange(entry.id, newText, entry.characterWidths, selectionStart, entry.characterOpacities, entry.characterAmplitudes, entry.characterLetterSpacings)
     }
     
     // Track typing activity (not Enter key)
@@ -776,7 +927,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
       
       let currentLine = ''
       
-      if ((version === 'v3' || version === 'v4') && e.target.contentEditable === 'true') {
+      if ((version === 'v3' || version === 'v4' || version === 'v6') && e.target.contentEditable === 'true') {
         // For v3 and v4 contenteditable, get text before cursor
         const div = e.target
         const selection = window.getSelection()
@@ -1049,14 +1200,14 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
       <div className="entry">
         {version === 'v1' && timestampElement(fadeClass)}
         <div className={`entry-text ${fadeClass}`} style={{ ...combinedStyle, fontSize: `${fontSize}px`, lineHeight: `${fontSize + spacingMultiplier}px` }}>
-          {version === 'v3' ? renderTextWithWidths() : version === 'v4' ? renderTextWithOpacities() : entry.text}
+          {version === 'v3' ? renderTextWithWidths() : version === 'v4' ? renderTextWithOpacities() : version === 'v6' ? renderTextWithLetterSpacings() : entry.text}
         </div>
       </div>
     )
   }
 
-  // For v3 and v4, use contenteditable div to allow per-character styling
-  if (version === 'v3' || version === 'v4') {
+  // For v3, v4, and v6, use contenteditable div to allow per-character styling
+  if (version === 'v3' || version === 'v4' || version === 'v6') {
     return (
       <div className="entry">
         <div
@@ -1142,7 +1293,7 @@ function App() {
   const [fontSize, setFontSize, spacingMultiplier] = useFontSize()
   const [timeFormatIndex, cycleTimeFormat] = useFormatPreference('timeFormat', 0)
   const [entries, setEntries] = useState([
-    { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null, fontWidth: null, characterWidths: [], characterOpacities: [], characterAmplitudes: [] }
+    { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null, fontWidth: null, characterWidths: [], characterOpacities: [], characterAmplitudes: [], characterLetterSpacings: [] }
   ])
   const containerRef = useRef(null)
   const activeInputRef = useRef(null)
@@ -1199,7 +1350,7 @@ function App() {
     }))
   }
 
-  const handleInputChange = (id, text, characterWidths = null, selectionStart = null, characterOpacities = null, characterAmplitudes = null) => {
+  const handleInputChange = (id, text, characterWidths = null, selectionStart = null, characterOpacities = null, characterAmplitudes = null, characterLetterSpacings = null) => {
     const now = Date.now()
     setEntries(prev => prev.map(entry => {
       if (entry.id === id) {
@@ -1220,8 +1371,13 @@ function App() {
           updated.characterAmplitudes = characterAmplitudes
         }
         
-        // Record when typing starts (first character) for v2, v3, v4, and v5
-        if (!entry.startedAt && text.length > 0 && (version === 'v2' || version === 'v3' || version === 'v4' || version === 'v5')) {
+        // Update character letter spacings if provided (for v6)
+        if (characterLetterSpacings !== null && version === 'v6') {
+          updated.characterLetterSpacings = characterLetterSpacings
+        }
+        
+        // Record when typing starts (first character) for v2, v3, v4, v5, and v6
+        if (!entry.startedAt && text.length > 0 && (version === 'v2' || version === 'v3' || version === 'v4' || version === 'v5' || version === 'v6')) {
           updated.startedAt = now
           // Store the pause duration at the moment typing starts
           if (lastCommitTimeRef.current) {
@@ -1230,12 +1386,13 @@ function App() {
         }
         
         // Reset startedAt and pauseDuration if text is cleared, so spacing can grow again
-        if (entry.startedAt && text.length === 0 && (version === 'v2' || version === 'v3' || version === 'v4' || version === 'v5')) {
+        if (entry.startedAt && text.length === 0 && (version === 'v2' || version === 'v3' || version === 'v4' || version === 'v5' || version === 'v6')) {
           updated.startedAt = null
           updated.pauseDuration = null
           updated.characterWidths = []
           updated.characterOpacities = []
           updated.characterAmplitudes = []
+          updated.characterLetterSpacings = []
         }
         
         if (!entry.frozen && text.length > 0) {
@@ -1267,7 +1424,7 @@ function App() {
           if (!pauseDuration && entry.startedAt && lastCommitTimeRef.current) {
             pauseDuration = entry.startedAt - lastCommitTimeRef.current
           }
-          // Store character widths for v3, character opacities for v4, and character amplitudes for v5
+          // Store character widths for v3, character opacities for v4, character amplitudes for v5, and character letter spacings for v6
           return { 
             ...entry, 
             committed: true, 
@@ -1275,7 +1432,8 @@ function App() {
             pauseDuration: pauseDuration || 0, 
             characterWidths: entry.characterWidths || [],
             characterOpacities: entry.characterOpacities || [],
-            characterAmplitudes: entry.characterAmplitudes || []
+            characterAmplitudes: entry.characterAmplitudes || [],
+            characterLetterSpacings: entry.characterLetterSpacings || []
           }
         }
         return { ...entry, isActive: false }
@@ -1283,7 +1441,7 @@ function App() {
       
       const newId = prev.length
       lastCommitTimeRef.current = now
-      return [...updated, { id: newId, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null, fontWidth: null, characterWidths: [], characterOpacities: [], characterAmplitudes: [] }]
+      return [...updated, { id: newId, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null, fontWidth: null, characterWidths: [], characterOpacities: [], characterAmplitudes: [], characterLetterSpacings: [] }]
     })
   }
 
