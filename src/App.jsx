@@ -186,8 +186,20 @@ function Entry({ entry, onCommit, onInputChange, previousEntryDate, dateFormatIn
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      const textarea = e.target
+      const cursorPosition = textarea.selectionStart
+      const textBeforeCursor = textarea.value.substring(0, cursorPosition)
+      const lines = textBeforeCursor.split('\n')
+      const currentLine = lines[lines.length - 1]
+      
+      // Always prevent default to stop line breaks
       e.preventDefault()
-      onCommit(entry.id)
+      
+      // Only commit if the current line is not empty
+      if (currentLine.trim().length > 0) {
+        onCommit(entry.id)
+      }
+      // If the line is empty, do nothing (default is already prevented)
     }
     // Shift+Enter will create a new line (default behavior)
     // The handleInput will handle the resize
