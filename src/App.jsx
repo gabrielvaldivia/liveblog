@@ -35,6 +35,37 @@ function useFormatPreference(key, defaultIndex) {
   return [formatIndex, cycleFormat]
 }
 
+function useVersion() {
+  const [version, setVersion] = useState(() => {
+    const saved = localStorage.getItem('version')
+    return saved || 'v1'
+  })
+
+  useEffect(() => {
+    localStorage.setItem('version', version)
+  }, [version])
+
+  return [version, setVersion]
+}
+
+function VersionSwitcher({ version, setVersion }) {
+  const versions = ['v1', 'v2']
+  
+  return (
+    <div className="version-switcher">
+      {versions.map((v) => (
+        <button
+          key={v}
+          className={`version-btn ${version === v ? 'active' : ''}`}
+          onClick={() => setVersion(v)}
+        >
+          {v}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function useTheme() {
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
@@ -49,9 +80,10 @@ function useTheme() {
   }, [])
 }
 
-function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade, placeholder }) {
+function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycleTimeFormat, activeInputRef, shouldFade, placeholder, version, lastCommitTimeRef }) {
   const textareaRef = useRef(null)
   const [isFocused, setIsFocused] = useState(false)
+  const [currentPauseDuration, setCurrentPauseDuration] = useState(0)
   
   const [timestamp, setTimestamp] = useState(() => {
     return timeFormats[timeFormatIndex](new Date())
@@ -81,6 +113,60 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
       {timestamp}
     </div>
   )
+
+  // Update pause duration in real-time for v2 when entry is active and empty
+  useEffect(() => {
+    if (version !== 'v2') {
+      setCurrentPauseDuration(0)
+      return
+    }
+    
+    if (entry.id === 0) {
+      setCurrentPauseDuration(0)
+      return
+    }
+    
+    // For committed entries, use the stored pauseDuration if available
+    if (entry.committed) {
+      if (entry.pauseDuration !== null && entry.pauseDuration !== undefined) {
+        setCurrentPauseDuration(entry.pauseDuration)
+      } else {
+        setCurrentPauseDuration(0)
+      }
+      return
+    }
+    
+    // If typing has started, freeze the pause duration
+    if (entry.text.length > 0 && entry.startedAt && lastCommitTimeRef.current) {
+      const elapsed = entry.startedAt - lastCommitTimeRef.current
+      setCurrentPauseDuration(elapsed)
+      return
+    }
+    
+    // For active entries with no text yet, update pause duration in real-time
+    if (entry.isActive && entry.text.length === 0 && lastCommitTimeRef.current) {
+      const updatePause = () => {
+        const elapsed = Date.now() - lastCommitTimeRef.current
+        setCurrentPauseDuration(Math.max(0, elapsed))
+      }
+      
+      // Update immediately
+      updatePause()
+      
+      // Update every 50ms for smooth animation
+      const interval = setInterval(updatePause, 50)
+      return () => clearInterval(interval)
+    }
+  }, [version, entry.isActive, entry.text.length, entry.id, entry.startedAt, entry.committed, entry.pauseDuration, lastCommitTimeRef])
+
+  // Calculate spacing for v2 based on pause duration
+  // Linear growth - converts milliseconds to seconds, then multiplies by constant
+  const spacingStyle = version === 'v2' && currentPauseDuration > 0 && entry.id > 0 ? {
+    marginTop: `${(currentPauseDuration / 1000) * 2}px`,
+    transition: 'margin-top 0.1s ease-out'
+  } : version === 'v2' && entry.id === 0 ? {
+    marginTop: '0px'
+  } : {}
 
   useEffect(() => {
     if (entry.isActive && textareaRef.current) {
@@ -119,7 +205,7 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
       
       return () => {
         clearInterval(interval)
-        textarea.removeEventListener('blur', handleBlur)
+        textarea.removeEventListener('blur', handleBlurRefocus)
         if (activeInputRef && activeInputRef.current === textareaRef.current) {
           activeInputRef.current = null
         }
@@ -174,23 +260,24 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
     }
   }
 
-  const fadeClass = shouldFade ? 'faded' : ''
+  const fadeClass = version === 'v1' && shouldFade ? 'faded' : ''
 
   if (entry.committed) {
     return (
       <div className="entry">
-        {timestampElement(fadeClass)}
-        <div className={`entry-text ${fadeClass}`}>{entry.text}</div>
+        {version === 'v1' && timestampElement(fadeClass)}
+        <div className={`entry-text ${fadeClass}`} style={spacingStyle}>{entry.text}</div>
       </div>
     )
   }
 
   return (
     <div className="entry">
-      {timestampElement()}
+      {version === 'v1' && timestampElement()}
       <textarea
         ref={textareaRef}
         className="entry-input"
+        style={spacingStyle}
         value={entry.text}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
@@ -207,12 +294,14 @@ function Entry({ entry, onCommit, onInputChange, onTyping, timeFormatIndex, cycl
 
 function App() {
   useTheme()
+  const [version, setVersion] = useVersion()
   const [timeFormatIndex, cycleTimeFormat] = useFormatPreference('timeFormat', 0)
   const [entries, setEntries] = useState([
-    { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null }
+    { id: 0, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null }
   ])
   const containerRef = useRef(null)
   const activeInputRef = useRef(null)
+  const lastCommitTimeRef = useRef(null)
   
   // Detect if device is mobile (touch device)
   const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
@@ -242,22 +331,41 @@ function App() {
   const typingTimeoutRef = useRef(null)
 
   const handleTyping = () => {
-    // Fade out other entries when typing starts
-    setShouldFadeOthers(true)
-    // Clear existing timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current)
+    // Only fade out other entries in v1
+    if (version === 'v1') {
+      setShouldFadeOthers(true)
+      // Clear existing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+      // Set timeout to fade back in after stopping typing
+      typingTimeoutRef.current = setTimeout(() => {
+        setShouldFadeOthers(false)
+      }, 2000) // 2 seconds after stopping typing
     }
-    // Set timeout to fade back in after stopping typing
-    typingTimeoutRef.current = setTimeout(() => {
-      setShouldFadeOthers(false)
-    }, 2000) // 2 seconds after stopping typing
   }
 
   const handleInputChange = (id, text) => {
+    const now = Date.now()
     setEntries(prev => prev.map(entry => {
       if (entry.id === id) {
         const updated = { ...entry, text }
+        
+        // Record when typing starts (first character) for v2
+        if (!entry.startedAt && text.length > 0 && version === 'v2') {
+          updated.startedAt = now
+          // Store the pause duration at the moment typing starts
+          if (lastCommitTimeRef.current) {
+            updated.pauseDuration = now - lastCommitTimeRef.current
+          }
+        }
+        
+        // Reset startedAt and pauseDuration if text is cleared, so spacing can grow again
+        if (entry.startedAt && text.length === 0 && version === 'v2') {
+          updated.startedAt = null
+          updated.pauseDuration = null
+        }
+        
         if (!entry.frozen && text.length > 0) {
           updated.frozen = true
           updated.frozenAt = new Date()
@@ -267,8 +375,8 @@ function App() {
       return entry
     }))
 
-    // If text is cleared, immediately fade back in
-    if (text.length === 0) {
+    // If text is cleared, immediately fade back in (v1 only)
+    if (text.length === 0 && version === 'v1') {
       setShouldFadeOthers(false)
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current)
@@ -277,18 +385,31 @@ function App() {
   }
 
   const handleCommit = (id) => {
+    const now = Date.now()
+    
     setEntries(prev => {
       const updated = prev.map(entry => {
         if (entry.id === id) {
-          return { ...entry, committed: true, isActive: false }
+          // Store the pause duration when committing
+          let pauseDuration = entry.pauseDuration
+          if (!pauseDuration && entry.startedAt && lastCommitTimeRef.current) {
+            pauseDuration = entry.startedAt - lastCommitTimeRef.current
+          }
+          return { ...entry, committed: true, isActive: false, pauseDuration: pauseDuration || 0 }
         }
         return { ...entry, isActive: false }
       })
       
       const newId = prev.length
-      return [...updated, { id: newId, text: '', isActive: true, committed: false, frozen: false, frozenAt: null }]
+      lastCommitTimeRef.current = now
+      return [...updated, { id: newId, text: '', isActive: true, committed: false, frozen: false, frozenAt: null, startedAt: null, pauseDuration: null }]
     })
   }
+
+  // Initialize last commit time on mount
+  useEffect(() => {
+    lastCommitTimeRef.current = Date.now()
+  }, [])
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -309,24 +430,29 @@ function App() {
   }
 
   return (
-    <div className="container" ref={containerRef} onClick={handleContainerClick} onTouchStart={handleContainerClick}>
-      {entries.map((entry) => {
-        return (
-          <Entry
-            key={entry.id}
-            entry={entry}
-            onCommit={handleCommit}
-            onInputChange={handleInputChange}
-            onTyping={entry.isActive ? handleTyping : undefined}
-            timeFormatIndex={timeFormatIndex}
-            cycleTimeFormat={cycleTimeFormat}
-            activeInputRef={activeInputRef}
-            shouldFade={shouldFadeOthers && !entry.isActive}
-            placeholder={placeholderText}
-          />
-        )
-      })}
-    </div>
+    <>
+      <VersionSwitcher version={version} setVersion={setVersion} />
+      <div className="container" data-version={version} ref={containerRef} onClick={handleContainerClick} onTouchStart={handleContainerClick}>
+        {entries.map((entry) => {
+          return (
+            <Entry
+              key={entry.id}
+              entry={entry}
+              onCommit={handleCommit}
+              onInputChange={handleInputChange}
+              onTyping={entry.isActive ? handleTyping : undefined}
+              timeFormatIndex={timeFormatIndex}
+              cycleTimeFormat={cycleTimeFormat}
+              activeInputRef={activeInputRef}
+              shouldFade={version === 'v1' && shouldFadeOthers && !entry.isActive}
+              placeholder={placeholderText}
+              version={version}
+              lastCommitTimeRef={lastCommitTimeRef}
+            />
+          )
+        })}
+      </div>
+    </>
   )
 }
 
